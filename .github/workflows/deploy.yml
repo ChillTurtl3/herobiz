@@ -1,0 +1,59 @@
+name: Deploy to VPS
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        
+    - name: Install dependencies
+      run: npm install
+      
+    - name: Run tests
+      run: npm test
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: test  # Запускаем деплой только если тесты прошли
+    if: github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup SSH
+      uses: webfactory/ssh-agent@v0.8.0
+      with:
+        ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+    - name: Add server to known hosts
+      run: |
+        mkdir -p ~/.ssh
+        ssh-keyscan -H ${{ secrets.SERVER_IP }} >> ~/.ssh/known_hosts
+
+    - name: Deploy to server
+      run: |
+        ssh ${{ secrets.SSH_USERNAME }}@${{ secrets.SERVER_IP }} "
+          # Создаем папку для проекта
+          mkdir -p ~/apps/my-app
+          
+          # Копируем файлы проекта
+          rsync -avz --delete ./ ${{ secrets.SSH_USERNAME }}@${{ secrets.SERVER_IP }}:~/apps/my-app/
+          
+          # Заходим в папку и запускаем деплой скрипт
+          cd ~/apps/my-app
+          chmod +x deploy.sh
+          ./deploy.sh
+        "
